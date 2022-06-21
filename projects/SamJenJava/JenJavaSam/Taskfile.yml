@@ -1,0 +1,25 @@
+# https://taskfile.dev
+
+version: '3'
+includes:
+  maven: ./tasks/maven.tasks.yml
+
+vars:
+  _name_: project tasks
+
+tasks:
+  default:
+    cmds:
+      - echo "{{._name_}}"
+      - task -l
+    silent: true
+
+  ci-flow:
+    desc: Run Full Ci Flow for maven app
+    cmds:
+      - task maven:resolve-tooling
+      - task maven:build-maven
+      - task maven:test-maven
+      - task maven:publish-maven
+
+

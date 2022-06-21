@@ -1,0 +1,43 @@
+# https://taskfile.dev
+
+version: "3"
+vars:
+  target_dest_file: docker-compose.yml
+includes:
+  tut: "tut.tasks.yml"
+tasks:
+
+  resolve-deps:
+    desc: install required dependancies
+    vars:
+      _deps_: |-
+        tool: os.tool.docker-compose
+    cmds:
+    - pip install docker-compose
+
+  spin-up:
+    desc: _
+    cmds: 
+      - docker-compose -f {{.target_dest_file}} up  -d
+  respin:
+    desc: _
+    cmds:
+      - docker-compose -f {{.target_dest_file}} restart
+
+  show-urls:
+    desc: prints services ui urls
+    silent: yes
+    cmds:
+      - |
+        echo '
+        click.to.reach:
+           Jenkins: 'http://localhost:8080'
+           GitLab: 'http://localhost:38080'
+           RepoHttp: 'http://localhost:8043'
+        '
+  spin-down:
+    desc: _
+    vars:
+      rest_suff: '{{if .safe_run}}| true{{else}} {{end}}'
+    cmds: 
+      - docker-compose -f {{.target_dest_file}} down {{.rest_suff}}

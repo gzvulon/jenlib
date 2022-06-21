@@ -1,19 +1,174 @@
 # https://taskfile.dev
 
-version: '2'
+version: '3'
+
+includes:
+  reposet: _infra/reposet_pack/reposet.tasks.yml
+  mkdocs: tasks/mkdocs.tasks.yml
+  jenlib: tasks/jenlib.product.tasks.yml
+  decks: 
+    dir: decks
+    taskfile: decks
+  # jenconda: tasks/jenconda.product.tasks.yml
+  docs-builder: _infra/mkdocs-basic-pack/mkdocs-build-basic.tasks.yml
+  docs-publisher: tasks/mkdocs-publish.tasks.yml
 
 vars:
-  GREETING: Jenlib repo actions
-
+  reposet__conf_map: .:_layout_/reposet.conf_v4.yaml@vars.reposet_items_yaml
 tasks:
   default:
     cmds:
-      - echo "{{.GREETING}}"
-      - task -l
+      - task info
+      - echo "for task list use 'task list' "
     silent: true
+
+  list:
+    desc: list of avilable tasks. filter with [part=reposet part=mkdocs part=PROJ_PART]]
+    vars:
+      part: '{{ default "" .part}}'
+      part_opt: '{{if .part}}| grep {{.part}} {{else}}{{end}}'
+    cmds: 
+      - |-
+        task -l {{.part_opt}}
+
+  info:
+    desc: Information about this dir
+    silent: true
+    vars:
+      title: Jenlib repo actions
+      content: |
+        --- usefull tasklist ---
+        * task info            * show info about this project
+        * task resolve         * resolve dependancies
+        * task mkdocs:serve    * start live docs server (serve-bg for deattached mode)
+        * task ci-flow         * run ci pipeline [build, test, local_publish]
+        * task list            * list public tasks
+        for more tasks:        * task list #desc:# list public tasks
+        ------------------------
+        {{.title}}
+        
+    cmds:
+      - echo '{{.content}}'
+  
+  resolve:
+    desc: resolve dependancies
+    cmds:
+      - task: reposet:resolve
+
+  resolve-deps:
+    desc: _
+    vars:
+      apt_get_list: zip unzip jq wget curl
+    cmds:
+      - sudo apt-get install -y {{.apt_get_list}}
+      - curl https://rclone.org/install.sh | sudo bash || true
+      - task os.tool.install.yq_3
+      - task -t ./devpod/setup.os.docker.yaml install-all
+      - task -t ./devpod/setup.os.conda.yaml install-all
+      - pip install docker-compose
+  
+  deps-resolve:
+    cmds:
+      - task: resolve-deps
+  
+  os.tool.install.yq_3:
+    desc: install yq version 3
+    cmds:
+    - curl -L https://github.com/mikefarah/yq/releases/download/3.4.1/yq_linux_amd64 -o /tmp/yq_linux_amd64
+    - chmod +x /tmp/yq_linux_amd64
+    - sudo mv /tmp/yq_linux_amd64 /usr/local/bin/yq_3
+
+  os.service.install.docker:
+    desc: install docker via devpod
+    cmds:
+      - ./devpod/
+    status:
+      - docker ps
+
+  fix-docker-sock-permissions:
+    desc: simple fix
+    cmds:
+    - sudo chmod 777 /var/run/docker.sock
+          
+  ci-full:
+    desc: 0-level block. build and publish. requires --force flag.
+    cmds:
+    - task: ci-flow
+    - task: publish-flow
+    status:
+    - true # -prevent accidental run-
+
+  ci-flow:
+    desc: 1-level block. main entry point.
+    cmds:
+      - task build-stage -o prefixed
+      - task test-stage -o prefixed
+      - task report-stage -o prefixed
+
+  build-stage:
+    desc: 2-level block. build phase
+    cmds:
+      - task: jenlib:build-jenlib
+      - task: build-dev-dockers
+      - task: jenconda:build-jenconda
+
+  build-dev-dockers:
+    desc: build all docker images
+    cmds:
+      - task -o prefixed -d decks  build-dev-dockers 
+
+  jenconda:build-jenconda:
+    desc: 3-level block. build jenconda docker image
+    cmds:
+      - task -o prefixed -d decks/jenconda-dimg build
+
+  test-stage:
+    desc: test new product
+    # deps:
+    cmds:
+      - task: test-e2e
+      # - task: test-jl-runner  ### disable jenkins-runniner tests due to sshd issue
+      - echo '[{{.TASK}} is OK]'
+
+  test-e2e:
+    desc: Run E2E tests with build
+    cmds:
+      - task -d decks apply task='ci-flow -o prefixed'  targets=e2e-tests-local
+    prefix: 'task ci-flow -d decks/2e-tests-local'
+
+  test-jl-runner:
+    desc: Build jenlibrunner and run headless tests
+    cmds:
+      - task -d decks/jenlib-runner-dimg ci-flow -o prefixed
+
+  report-stage:
+    desc: 2-level block. produces stam report about a build
+    cmds:
+      - task: mkdocs:build
+      - echo "here will be link to report"
+
+  publish-flow:
+    desc: 1-level block. publishes products to the world
+    status: ['true']
+    cmds:
+      - task -d decks/jenconda-dimg docker:publish -o prefixed
 
   readme:
     desc: _
     cmds:
       - cat README.md | less
 
+  ci-docs-build-and-publish-full:
+    desc: build documentation prepublish-local and publish remote
+    vars:
+      tasklist: >-
+        docs-builder:build-site
+        docs-publisher:publish-site-flow
+    cmds:
+      - task -o prefixed {{.tasklist}}
+
+
+  publish-dimgs:
+    desc: publish docker images
+    cmds:
+      - task -d decks  publish-dimgs

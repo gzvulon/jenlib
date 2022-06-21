@@ -1,0 +1,13 @@
+# https://taskfile.dev
+
+version: '3'
+# https://pypi.org/project/junit-xml//
+
+includes:
+  pyinst: pyinst.part.tasks.yml
+
+tasks:
+  default:
+    silent: true
+    cmds:
+      - task -l
